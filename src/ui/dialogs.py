@@ -5,6 +5,9 @@ Business logic stays in get_password.py and work_screen.py.
 """
 import tkinter as tk
 from tkinter import ttk, filedialog
+from pathlib import Path
+from datetime import date
+import re
 
 from . import theme as t
 from .widgets import Dialog, PasswordEntry, Tooltip, confirm, icon_for
@@ -251,3 +254,146 @@ def host_actions(main_frame, tile, on_message, on_lock, on_shutdown, on_terminal
 
     ttk.Button(dlg.buttons, text="Close", command=dlg.cancel).pack(side="right")
     dlg.run(focus=dlg.body.winfo_children()[0])
+
+# ------------------------------------------------------------ output viewer --
+def show_output(main_frame, ip):
+    """Display command history and output for a host."""
+
+    log_root = Path("~/Lab_master/logs").expanduser()
+
+    # Find all log files belonging to this IP.
+    log_files = sorted(
+        (
+            path
+            for path in log_root.glob("*/*/*")
+            if path.is_file() and path.name == ip
+        ),
+        key=lambda path: (path.parent.parent.name, path.parent.name),
+    )
+
+    dlg = Dialog(
+        main_frame,
+        "Command History",
+        f"Command output and execution history for {ip}",
+    )
+
+    # Scrollable output area.
+    container = ttk.Frame(dlg.body)
+    container.pack(fill="both", expand=True)
+
+    scrollbar = ttk.Scrollbar(container, orient="vertical")
+    scrollbar.pack(side="right", fill="y")
+
+    output = tk.Text(
+        container,
+        wrap="word",
+        font=("TkFixedFont", 10),
+        height=22,
+        width=82,
+        bg="#15191f",
+        fg="#e6edf3",
+        insertbackground="#e6edf3",
+        relief="flat",
+        padx=14,
+        pady=12,
+        yscrollcommand=scrollbar.set,
+        state="disabled",
+    )
+    output.pack(side="left", fill="both", expand=True)
+    scrollbar.configure(command=output.yview)
+
+    # Colour the command status indicators.
+    output.tag_configure("success", foreground="#4ade80")
+    output.tag_configure("failure", foreground="#f87171")
+    output.tag_configure("command", foreground="#7dd3fc")
+    output.tag_configure("muted", foreground="#9ca3af")
+    output.tag_configure("body", foreground="#e6edf3")
+
+    def append(text, tag=None):
+        output.insert("end", text, tag)
+
+    if not log_files:
+        append("No command history found for this host.\n", "muted")
+        append(
+            "\nLogs will appear here after commands have been executed "
+            "through Lab Master.",
+            "body",
+        )
+    else:
+        for log_file in log_files:
+            try:
+                raw = log_file.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                append(f"Could not read {log_file}:\n{exc}\n\n", "failure")
+                continue
+
+            # Each record begins with CMD_EXECUTED and ends with EXIT_CODE.
+            records = re.split(r"(?=^CMD_EXECUTED = )", raw, flags=re.MULTILINE)
+
+            for record in records:
+                record = record.strip("\n")
+                if not record.strip():
+                    continue
+
+                lines = record.splitlines()
+                command_line = lines[0]
+
+                if not command_line.startswith("CMD_EXECUTED = "):
+                    append(record + "\n\n", "body")
+                    continue
+
+                command = command_line[len("CMD_EXECUTED = "):]
+                exit_index = next(
+                    (
+                        i for i, line in enumerate(lines)
+                        if line.startswith("EXIT_CODE: ")
+                    ),
+                    None,
+                )
+
+                if exit_index is None:
+                    result_lines = lines[1:]
+                    exit_code = None
+                else:
+                    result_lines = lines[1:exit_index]
+                    try:
+                        exit_code = int(
+                            lines[exit_index].split(":", 1)[1].strip()
+                        )
+                    except ValueError:
+                        exit_code = None
+
+                if exit_code == 0:
+                    append("✔  ", "success")
+                elif exit_code is not None:
+                    append("✖  ", "failure")
+                else:
+                    append("◐  ", "muted")
+
+                append(command + "\n", "command")
+
+                if exit_code is None:
+                    append("   Exit code: unavailable\n", "muted")
+                else:
+                    tag = "success" if exit_code == 0 else "failure"
+                    append(f"   Exit code: {exit_code}\n", tag)
+
+                append("   " + "─" * 48 + "\n", "muted")
+
+                if result_lines:
+                    append("\n".join(result_lines) + "\n", "body")
+                else:
+                    append("(No output)\n", "muted")
+
+                append("\n\n")
+
+    output.configure(state="disabled")
+    output.yview_moveto(0)
+
+    ttk.Button(
+        dlg.buttons,
+        text="Close",
+        command=dlg.cancel,
+    ).pack(side="right")
+
+    dlg.run()
