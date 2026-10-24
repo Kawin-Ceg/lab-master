@@ -7,12 +7,11 @@ import configparser as configparser
 import remote_connection as remote_connection
 import json_reader as json_reader
 import find_user as find_user
-import window_functions as window_functions
-import rearrange as rearrange
-from tkinter import font
 from tkinter import filedialog
+from ui import theme
+from ui.widgets import HostTile, confirm
+from ui.main_window import MainWindow
 from pathlib import Path
-import copy as cp
 from base_dir import BASE_DIR
 
 
@@ -44,8 +43,8 @@ config.read(config_file_path)
 import get_password 
 
 
-common_user = "manikandan"
-common_pass = "******"
+common_user = ""
+common_pass = ""
 
 isReconnect = False
 isSUDO = None
@@ -67,7 +66,8 @@ term_screen=None
 ctrl_screen=None
 canvas_screen=None
 
-processing_label = None
+status_bar = None
+ui = None
 
 isSUDO_check_box=None
 
@@ -93,149 +93,76 @@ password_entry =None
 cmd_entry      =None
 
 main_frame = tk.Tk()
-main_frame.title("Lab master")
-main_frame.geometry("850x600")
-main_frame.resizable(True, True)
+theme.apply(main_frame)
+
+# Host status keys (see ui/theme.py STATUS). The old *_ICON names are kept
+# so the logic below reads the same as before.
+IDLE_ICON      = "idle"            # connected, nothing running
+GREEN_ICON     = "success"
+GREY_ICON      = "not_connected"
+RED_ICON       = "failed"
+YELLOW_ICON    = "running"
+RED_CROSS_ICON = "offline"
+
+src_file_path = tk.StringVar(value="")
+des_file_path = tk.StringVar(value="")
 
 
-# there is a change made here
-#need to check of any fault occurs
-DEFAULT_ICON_SIZE = (105,90)
-
-GREEN_ICON           = tk.PhotoImage(file=BASE_DIR / "images" / "green.png").subsample(5)
-GREY_ICON            = tk.PhotoImage(file=BASE_DIR / "images" / "grey.png").subsample(5)
-RED_ICON             = tk.PhotoImage(file=BASE_DIR / "images" / "red.png").subsample(5)
-YELLOW_ICON          = tk.PhotoImage(file=BASE_DIR / "images" / "yellow.png").subsample(5)
-RED_CROSS_ICON       = tk.PhotoImage(file=BASE_DIR / "images" / "redCross.png").subsample(5)
-
-MESSAGE_ICON         = tk.PhotoImage(file=BASE_DIR / "images" / "message.png").subsample(12)
-LOCK_ICON            = tk.PhotoImage(file=BASE_DIR / "images" / "lock.png").subsample(12)
-SHUTDOWN_ICON        = tk.PhotoImage(file=BASE_DIR / "images" / "shutdown.png").subsample(12)
-RUN_ICON             = tk.PhotoImage(file=BASE_DIR / "images" / "play.png").subsample(11)
-STOP_ICON            = tk.PhotoImage(file=BASE_DIR / "images" / "stop.png").subsample(12)
-COPY_ICON            = tk.PhotoImage(file=BASE_DIR / "images" / "clip_board.png").subsample(14)
-COPY_MOVE_ICON       = tk.PhotoImage(file=BASE_DIR / "images" / "copy_move.png").subsample(14)
-DOWNLOAD_ICON        = tk.PhotoImage(file=BASE_DIR / "images" / "download.png").subsample(14)
-DOWNLOAD_FOLDER_ICON = tk.PhotoImage(file=BASE_DIR / "images" / "download_folder.png").subsample(14)
-REFRESH_ICON         = tk.PhotoImage(file=BASE_DIR / "images" / "refresh.png").subsample(12)
-
-UNLOCK_USER_ICON     = tk.PhotoImage(file=BASE_DIR / "images" / "unlock_user.png").subsample(12)
-LOCK_USER_ICON       = tk.PhotoImage(file=BASE_DIR / "images" / "lock_user.png").subsample(12)
-CHANGE_PASSWD_ICON   = tk.PhotoImage(file=BASE_DIR / "images" / "change_password.png").subsample(12)
-USER_ADD_ICON        = tk.PhotoImage(file=BASE_DIR / "images" / "user_add.png").subsample(12)
-USER_DEL_ICON        = tk.PhotoImage(file=BASE_DIR / "images" / "user_del.png").subsample(12)
-
-EYE_ICON             = tk.PhotoImage(file=BASE_DIR / "images" / "open_eye.png").subsample(16)
-
-src_file_path = tk.StringVar(value="src  file")
-des_file_path = tk.StringVar(value="des  file ")
-
-
-class term_btn:
-
-    # components related to GUI
-    main_frame = None
-    term_btn   = None
-    icon_img   = None
-    caption    = None
-    cover      = None
+class term_btn(HostTile):
 
     # components related to the remote machine
     client      = None
-    hostname    = ""
-    ip_address  = None
     active_users= None
     conn_status = "not_conn"
-    
-    def __init__(self, main_frame, ip_address, image = GREY_ICON):
 
-        self.main_frame = main_frame 
-#
-#   for the lwft panel button
-#
-        self.cover = tk.Frame(main_frame, bg= "green")
-        
-        self.icon_img = image
-        self.term_btn = tk.Button(self.cover, image=self.icon_img, width=105, height=90, command= lambda: get_password.options_for_single_host(image_dict, main_frame, self, username_entry.get(), password_entry.get()))
-        self.term_btn.image = self.icon_img
-        self.caption  = tk.Label(self.cover, text=ip_address, width=14) 
-        self.ip_address= ip_address
-        
-        self.term_btn.pack(side="left")
-        self.caption.pack(side="top")
-
-        self.cover.pack(side="left")
+    def __init__(self, parent, ip_address):
+        super().__init__(parent, ip_address, on_open=open_single_host)
 
     def set_user_list(self, list_of_users):
-       
         self.active_users = list_of_users
-        net_str = self.hostname[:10] + "\n" + self.ip_address 
+        self.set_details(self.hostname, list_of_users)
 
-        count = 0
-        for user in list_of_users:
-            if (user[1] == "ssh"):
-                conn_type = "[R] "
-            elif(user[1] == "local"):
-                conn_type = "[L] "
-            net_str =  net_str + "\n" + conn_type+ user[0]
-            count= count + 1
-            if(count == 3):
-                break
-        self.caption.config(text=net_str)
-        print("...........changing the user list ...............")
-        #self.caption.config(text = "new\nnew")
 
-    def unpack_caption(self):
-        self.caption.pack_forget()
-    def pack_caption(self):
-        self.caption.pack(side="top")
-        
+def open_single_host(t_btn):
+    get_password.options_for_single_host(main_frame, t_btn, username_entry.get(), password_entry.get())
+
 
 def get_term_btn():
 
-    global list_of_lists, array_of_term_btns
-    
+    global array_of_term_btns
+
     print(list_of_ips)
-    
+
     for ip in list_of_ips:
-        temp_term_btn = term_btn(term_screen, ip, GREY_ICON)
+        temp_term_btn = term_btn(ui.grid.inner, ip)
         array_of_term_btns.append(temp_term_btn)
-    
+        ui.grid.add(temp_term_btn)
+
+    ui.grid.reflow()
+
 def change_term_btn_icon(ip_address, icon_status):
 
     global array_of_term_btns
- 
-    print("CHANGING THE COLOR OF:",ip_address)
-    print("list of terminal buttons:", len(array_of_term_btns))
+
+    print("CHANGING THE STATUS OF:", ip_address, "->", icon_status)
     for t_btn in array_of_term_btns:
         if(t_btn.ip_address == ip_address):
-            t_btn.term_btn.config(image=icon_status)
+            t_btn.set_status(icon_status)
 
-            t_btn.icon_img = icon_status
-            
-            t_btn.term_btn.image = icon_status
-
-            if(icon_status == GREEN_ICON):
-                t_btn.conn_status = "alive"
-            elif (icon_status == GREY_ICON):
-                t_btn.conn_status = "not_conn"
-            elif (icon_status == RED_CROSS_ICON):
+            if (icon_status in (GREY_ICON, RED_CROSS_ICON)):
                 t_btn.conn_status = "not_conn"
             else:
                 t_btn.conn_status = "alive"
-            
+
             break
 
+    ui.refresh_counts()
     main_frame.update()
-
-def print_SUDO_status(isSUDO):
-    print("is SUDO :", isSUDO.get())
 
 def set_term_btn_client(ip_address, client):
 
     global array_of_term_btns
-     
-    print("list of terminal buttons:", len(array_of_term_btns))
+
     for t_btn in array_of_term_btns:
         if(t_btn.ip_address == ip_address):
             t_btn.client = client
@@ -264,73 +191,17 @@ def set_term_btn_hostname(ip_address, hostname):
 
 def reset_color_all_term_btns(icon_status):
     for t_btn in array_of_term_btns:
-    
         if(t_btn.conn_status == "alive"):
+            t_btn.set_status(icon_status)
 
-            t_btn.term_btn.config(image=icon_status)
-            t_btn.icon_img = icon_status            
-            t_btn.term_btn.image = icon_status
-            
-    print("colour reseted")
-
+    ui.refresh_counts()
     main_frame.update()
-### -----------------------------------------
-def restructure(event):
-    global array_of_term_btns, list_of_ips, term_screen, canvas_screen
-    # print("got btns", len(array_of_term_btns))
-
-    term_screen.update_idletasks()
-
-    no_of_cols = term_screen.winfo_width() // array_of_term_btns[0].cover.winfo_width()
-    no_of_rows = (len(array_of_term_btns) // no_of_cols) + (len(array_of_term_btns) % no_of_cols)
-    
-    x=0
-    y=0
-    count = 0
-    
-    for btn in array_of_term_btns:
-        #print("x:",x,"y:",y)
-        btn.cover.place(x=x,y=y)
-        x = x + btn.cover.winfo_width()
-        count = count + 1
-        if (count == no_of_cols):
-            count = 0
-            x = 0
-            y = y + btn.cover.winfo_height()   
-
-
-    term_screen.config(height=y+btn.cover.winfo_height())
-    
-    term_screen.update_idletasks()
-    
-    canvas_screen.configure(
-        scrollregion=canvas_screen.bbox("all")
-    )
-### --------------------------------------------
-def grid_restructure(event):
-    global list_of_elements
-
-    #print("before :", len(list_of_elements))
-    #rearrange.grid_arrange(ctrl_screen, list_of_elements)
-    rearrange.ribbon_style(ctrl_screen, list_of_elements)
 
 def short_long_form(array_of_term_btns):
-
-    global isSTFM 
-    
-    if (isSTFM == 0):
-        isSTFM = 1
-        for btn in array_of_term_btns:
-            btn.unpack_caption()
-    else:
-        isSTFM = 0
-        for btn in array_of_term_btns:
-            btn.pack_caption()
+    ui.compact.set(not ui.compact.get())
+    ui.grid.set_compact(ui.compact.get())
 
 
-    restructure(None)
-
-    
 def get_initial_data(client):
 
     list_of_users = []
@@ -367,7 +238,7 @@ def get_initial_data(client):
     
 def connect_all(list_of_ips, common_username, common_password):
 
-    global list_of_clients, connected_ips_list, missing_ips_list, isSTOP, processing_label, isReconnect
+    global list_of_clients, connected_ips_list, missing_ips_list, isSTOP, isReconnect
     print("Number of IPs : ", len(list_of_ips))
 
     need_to_connect_count = len(list_of_ips)
@@ -378,7 +249,7 @@ def connect_all(list_of_ips, common_username, common_password):
     if(isReconnect == True):
         need_to_connect_count = len(missing_ips_list)
 
-    processing_label.config(text= f"finishing {connection_done_count}/{need_to_connect_count}")
+    status_bar.progress_update(connection_done_count, need_to_connect_count, failure_count)
     main_frame.update()
     
     for ip in list_of_ips:
@@ -412,7 +283,7 @@ def connect_all(list_of_ips, common_username, common_password):
             connected_ips_list.add(ip) ; success_count += 1
             missing_ips_list.discard(ip)
 
-            change_term_btn_icon( ip, GREEN_ICON)
+            change_term_btn_icon( ip, IDLE_ICON)
             
         except Exception as e:
             print("Connection failed :", ip) 
@@ -431,15 +302,17 @@ def connect_all(list_of_ips, common_username, common_password):
 
 
         connection_done_count += 1
-        processing_label.config(text= f"finishing {connection_done_count}/{need_to_connect_count}")
+        status_bar.progress_update(connection_done_count, need_to_connect_count, failure_count)
         main_frame.update()
 
 
 
-    processing_label.config(text= f"[ Done ] Success:{success_count} Failure:{failure_count}")
+    status_bar.done(success_count, failure_count)
     main_frame.update()
         
     isReconnect = True
+    if success_count:
+        ui.set_connected()
     return list_of_clients
 
 
@@ -478,7 +351,7 @@ def run_cmd_all(list_of_clients, cmd, username, password, isSUDO, inputs=False):
     success_count = 0
     failure_count = 0
 
-    processing_label.config(text=f"finishing {finished_count}/{total_count}")
+    status_bar.progress_update(finished_count, total_count, failure_count)
     main_frame.update()
     
     for client in list_of_clients:
@@ -535,11 +408,11 @@ def run_cmd_all(list_of_clients, cmd, username, password, isSUDO, inputs=False):
             f.write(exit_str)
 
 
-        processing_label.config(text=f"finishing {success_count + failure_count}/{total_count}")
+        status_bar.progress_update(success_count + failure_count, total_count, failure_count)
         main_frame.update()
             
 
-    processing_label.config(text=f"[ Done ] Success:{success_count} Failure:{failure_count}")
+    status_bar.done(success_count, failure_count)
     main_frame.update()
    
     return list_of_lists
@@ -571,8 +444,9 @@ def refresh_data():
         connected_ips_list.add(t_btn.ip_address)
         missing_ips_list.discard(t_btn.ip_address)
 
-        change_term_btn_icon(t_btn.ip_address, GREEN_ICON)
+        change_term_btn_icon(t_btn.ip_address, IDLE_ICON)
 
+    status_bar.message("Host info refreshed.")
     return 0
         
 
@@ -601,7 +475,7 @@ def send_msg_all():
 
     str_msg_cmd = get_password.get_msg_details(main_frame)
     if(str_msg_cmd == ""):
-        print("SMPTY STRING")
+        print("EMPTY STRING")
         return -1
 
     print("P ",str_msg_cmd," P")    
@@ -630,7 +504,8 @@ def copy_all():
 
     if(src_file_path.get() == "" or des_file_path.get() == ""):
         print("File not specified")
-        return -1 
+        status_bar.message("Choose a source path and a destination path first.", error=True)
+        return -1
 
     reset_color_all_term_btns(YELLOW_ICON)
     
@@ -648,11 +523,11 @@ def copy_all():
             change_term_btn_icon(ip_address, RED_ICON)
 
 
-        processing_label.config(text=f"finishing {success_count + failure_count}/{total_count}")
+        status_bar.progress_update(success_count + failure_count, total_count, failure_count)
         main_frame.update()
 
 
-    processing_label.config(text=f"[ Done ] Success:{success_count} Failure:{failure_count}")
+    status_bar.done(success_count, failure_count)
     main_frame.update()
         
     return 0
@@ -666,7 +541,8 @@ def copy_move_all():
 
     if(src_file_path.get() == "" or des_file_path.get() == ""):
         print("File not specified")
-        return -1 
+        status_bar.message("Choose a source path and a destination path first.", error=True)
+        return -1
 
     reset_color_all_term_btns(YELLOW_ICON)
     
@@ -690,11 +566,11 @@ def copy_move_all():
         run_cmd_all([client], net_cmd, username_entry.get(), password_entry.get(), isSUDO=True)
 
 
-        processing_label.config(text=f"finishing {success_count + failure_count}/{total_count}")
+        status_bar.progress_update(success_count + failure_count, total_count, failure_count)
         main_frame.update()
 
 
-    processing_label.config(text=f"[ Done ] Success:{success_count} Failure:{failure_count}")
+    status_bar.done(success_count, failure_count)
     main_frame.update()
         
     return 0
@@ -705,7 +581,8 @@ def download_all():
 
     if(src_file_path.get() == "" or des_file_path.get() == ""):
         print("File not specified")
-        return -1 
+        status_bar.message("Choose a source path and a destination path first.", error=True)
+        return -1
 
     total_count   = len(list_of_clients)
     success_count = 0 
@@ -727,11 +604,11 @@ def download_all():
             change_term_btn_icon(ip_address, GREEN_ICON) ; success_count += 1
 
 
-        processing_label.config(text=f"finishing {success_count + failure_count}/{total_count}")
+        status_bar.progress_update(success_count + failure_count, total_count, failure_count)
         main_frame.update()
 
 
-    processing_label.config(text=f"[ Done ] Success:{success_count} Failure:{failure_count}")
+    status_bar.done(success_count, failure_count)
     main_frame.update()
     return 0
 
@@ -742,7 +619,8 @@ def download_folder_all():
 
     if(src_file_path.get() == ""):
         print("File not specified")
-        return -1 
+        status_bar.message("Choose a source folder path first.", error=True)
+        return -1
 
     total_count   = len(list_of_clients)
     success_count = 0 
@@ -764,11 +642,11 @@ def download_folder_all():
             change_term_btn_icon(ip_address, GREEN_ICON) ; success_count += 1
 
 
-        processing_label.config(text=f"finishing {success_count + failure_count}/{total_count}")
+        status_bar.progress_update(success_count + failure_count, total_count, failure_count)
         main_frame.update()
 
 
-    processing_label.config(text=f"[ Done ] Success:{success_count} Failure:{failure_count}")
+    status_bar.done(success_count, failure_count)
     main_frame.update()
     return 0
 
@@ -776,8 +654,12 @@ def download_folder_all():
 
 def lock_user():
     global list_of_clients
-    username = get_password.get_username(main_frame)
-    
+    username = get_password.get_username(main_frame, "Lock user", "Lock user")
+
+    if(username == ""):
+        print("FIELD EMPTY")
+        return -1
+
     lock_user_cmd = config.get("system_cmd", "LOCK_USER") + " " + username
     print("the LOCK user  cmd = ", lock_user_cmd)
 
@@ -785,7 +667,7 @@ def lock_user():
 
 def unlock_user():
     global list_of_clients
-    username = get_password.get_username(main_frame)
+    username = get_password.get_username(main_frame, "Unlock user", "Unlock user")
 
     if(username == ""):
         print("FIELD EMPTY")
@@ -808,6 +690,9 @@ def lock_sessions_all():
 def shut_down_all():
     global list_of_clients
 
+    if not ui.confirm_shutdown():
+        return -1
+
     shutdown_cmd = config.get("system_cmd", "SHUT_DOWN_NOW")
     print("the LOCK cmd = ", shutdown_cmd)
 
@@ -822,6 +707,9 @@ def change_passwd_all():
 
     list_of_new_users =  get_password.get_new_passwd(main_frame)
     print(list_of_new_users)
+
+    if not list_of_new_users:
+        return -1
 
     change_passwd_cmd = config.get("system_cmd", "CHANGE_PASSWD")
         
@@ -840,6 +728,15 @@ def user_del_all():
 
     list_old_users = get_password.get_old_users(main_frame)
     print("got the list of users ",list_old_users)
+
+    if not list_old_users:
+        return -1
+
+    if not confirm(main_frame, "Delete these users?",
+                   "This permanently deletes the accounts and their home folders on "
+                   "every connected host:\n\n  " + "\n  ".join(list_old_users),
+                   f"Delete {len(list_old_users)} user(s)"):
+        return -1
     
     user_del_cmd = config.get("system_cmd", "USER_DEL")
 
@@ -897,206 +794,55 @@ def exit_main():
 
     main_frame.destroy()
 
+
 def initialize(main_frame):
-    global term_screen, ctrl_screen, canvas_screen,  array_of_term_btns, list_of_ips, list_of_clients, list_of_elements, username_entry, password_entry, isSUDO
-    global processing_label
+    global array_of_term_btns, list_of_ips, username_entry, password_entry, cmd_entry, isSUDO
+    global status_bar, ui
 
     array_of_term_btns = []
     list_of_ips = json_reader.read_any_file(main_frame)  # this function return only the list of the ips scanned
 
+    actions = {
+        "connect":          lambda: connect_all(list_of_ips, username_entry.get(), password_entry.get()),
+        "run":              lambda: run_cmd_all(list_of_clients, cmd_entry.get().strip(),
+                                                username_entry.get(), password_entry.get(), isSUDO.get()),
+        "stop":             stop_all,
+        "message":          send_msg_all,
+        "lock_screens":     lock_sessions_all,
+        "shutdown":         shut_down_all,
+        "refresh":          refresh_data,
+        "lock_user":        lock_user,
+        "unlock_user":      unlock_user,
+        "change_password":  change_passwd_all,
+        "add_user":         None,            # user_add_all is not implemented yet
+        "delete_user":      user_del_all,
+        "browse_src":       get_src_file_path,
+        "browse_des":       get_des_file_path,
+        "upload":           copy_all,
+        "upload_sudo_move": copy_move_all,
+        "download":         download_all,
+        "download_folder":  download_folder_all,
+        "exit":             exit_main,
+    }
 
-    canvas_plus_scroll_bar = tk.Frame(main_frame, bg="red")
-    canvas_screen          = tk.Canvas(canvas_plus_scroll_bar, bg="#2e3436")
-    term_screen_scroll_bar = tk.Scrollbar(canvas_plus_scroll_bar,
-                                          orient=tk.VERTICAL, 
-                                          command=canvas_screen.yview
-                                         )
+    ui = MainWindow(main_frame, actions, src_file_path, des_file_path,
+                    source_name=json_reader.last_file_name, host_count=len(list_of_ips))
 
-    
-    term_screen = tk.Frame(canvas_screen, bg="#2e3436")
-    ctrl_screen = tk.Frame(main_frame, bg="#555753")
+    status_bar     = ui.status_bar
+    username_entry = ui.username_entry
+    password_entry = ui.password_entry
+    cmd_entry      = ui.cmd_entry
+    isSUDO         = ui.is_sudo
 
+    username_entry.insert(0, common_user)
 
-### ---------------------------------------------
-    canvas_window = canvas_screen.create_window((0,0),anchor="nw",window=term_screen)
-
-    def resize_canvas(event):
-        canvas_screen.itemconfig(canvas_window, width=event.width)
-
-    canvas_screen.bind("<Configure>", resize_canvas)    
-
-    canvas_screen.configure(yscrollcommand=term_screen_scroll_bar.set)   
-    term_screen_scroll_bar.configure(command=canvas_screen.yview)
-    
-    term_screen.bind("<Configure>", lambda e: canvas_screen.configure(scrollregion=canvas_screen.bbox("all")))        
-        
-### ---------------------------------------------
-
-    # sep_u_r     = tk.Frame(main_frame, width = 2, bg = "red")
-    # sep_r_i     = tk.Frame(main_frame, width = 2, bg = "black")
-    # sep_i_c     = tk.Frame(main_frame, width = 2, bg = "black")
-    # sep_c_o     = tk.Frame(main_frame, width = 2, bg = "black")
-
-    connection_frame = tk.Frame(ctrl_screen)
-    command_frame    = tk.Frame(ctrl_screen)
-    info_frame       = tk.Frame(command_frame)
-    user_frame       = tk.Frame(command_frame)
-    processing_frame = tk.Frame(command_frame)
-    copy_Frame       = tk.Frame(ctrl_screen)
-    other_Frame      = tk.Frame(ctrl_screen)
-
-
-
-    copy_btn_panel   = tk.Frame(copy_Frame)
-    # cmd_entry   = tk.Entry(main_frame)
-    cmd_entry   = tk.Entry(command_frame)
-
-    # buttons for the left panel
-    # getting the ips count from the file
     get_term_btn()
+    ui.refresh_counts()
+    if not list_of_ips:
+        status_bar.message("No hosts loaded. Restart and choose a .json or .txt IP list.", error=True)
+    username_entry.focus_set()
 
-    # buttons for the right panel
-    # once all the button is load we can try to connect or exec command
-
-
-    custom_font = font.nametofont("TkDefaultFont").copy()
-    custom_font.configure(size=11)
-
-    username_label = tk.Label(connection_frame, text = "User name:", font=custom_font)
-    username_entry = tk.Entry(connection_frame                     , font=custom_font)
-    username_entry.insert(0,common_user)
-    password_label = tk.Label(connection_frame, text = "Password:" , font=custom_font)
-    password_entry = tk.Entry(connection_frame, show = "*"         , font=custom_font)
-    password_entry.insert(0,common_pass)
-
-    src_file_label = tk.Entry(copy_Frame, textvariable=src_file_path, font=custom_font)
-    des_file_label = tk.Entry(copy_Frame, textvariable=des_file_path, font=custom_font)
-
-    short_form_btn = tk.Button(other_Frame, text="shfm", command=lambda: short_long_form(array_of_term_btns))
-    help_btn       = tk.Button(other_Frame, text="Help")
-    exit_btn       = tk.Button(other_Frame, text="Exit", command=exit_main)
-
-    processing_label =tk.Label(processing_frame, text="finishing 0/0")
-
-
-    
-    ctrl_screen_separator_list   = [tk.Frame(ctrl_screen,   bg="grey", width =2) for _ in range(5)] 
-    command_frame_separator_list = [tk.Frame(command_frame, bg="grey", height=1) for _ in range(5)]
-    
-    main_frame.update()
-
-    connect_btn = tk.Button(connection_frame, text = "Connect", command=lambda : connect_all(list_of_ips, username_entry.get(), password_entry.get()))
-    # connect_btn = tk.Button(ctrl_screen, text = "Connect", command = connect_default)
-
-    isSUDO = tk.BooleanVar()
-    isDISP = tk.BooleanVar()
-    
-    isSUDO_check_box = tk.Checkbutton(info_frame, text="is SUDO", command=lambda: print_SUDO_status(isSUDO) , variable = isSUDO)
-    isDISP_check_box = tk.Checkbutton(user_frame, text="is DISP  " , variable = isDISP)
-
-    cmd_btn     = tk.Button(info_frame, text = "CMD", command=lambda: run_cmd_all(
-                                                                                    list_of_clients, 
-                                                                                    cmd_entry.get().strip(),
-                                                                                    username_entry.get(), 
-                                                                                    password_entry.get(),  
-                                                                                    isSUDO.get()
-                                                                                ))
-    stop_btn    = tk.Button(info_frame, text = "Stop", command = stop_all)
-    copy_btn    = tk.Button(copy_btn_panel, text = "Copy", command = copy_all)
-    copy_move_btn=tk.Button(copy_btn_panel, text = "copy_sudo_move", command=copy_move_all)
-    download_btn= tk.Button(copy_btn_panel, text = "Download", command = download_all)
-    download_folder_btn=tk.Button(copy_btn_panel, text="Dwnld Folder", command = download_folder_all)
-    msg_btn     = tk.Button(info_frame, text = "Msg", command = send_msg_all)
-    lock_btn    = tk.Button(info_frame, text = "Lock",command = lock_sessions_all)
-    shut_down_btn =tk.Button(info_frame, text = "Shut Down", command = shut_down_all)
-    refresh_btn   =tk.Button(info_frame, text = "refresh", command= refresh_data)
-
-    lock_usr_btn  =tk.Button(user_frame, text = "lock user", command =  lock_user )
-    unlock_usr_btn=tk.Button(user_frame, text = "unlock user", command= unlock_user)
-    change_passwd_btn=tk.Button(user_frame, text="change password", command = change_passwd_all)
-    user_add_btn     = tk.Button(user_frame, text="user add", command = user_add_all)
-    user_del_btn     = tk.Button(user_frame, text="user del", command = user_del_all)
-    
-    src_browse_btn = tk.Button(copy_Frame, text="src", command = get_src_file_path)
-    des_browse_btn = tk.Button(copy_Frame, text="des", command = get_des_file_path)
-
-    msg_btn.config(image = MESSAGE_ICON)
-    lock_btn.config(image= LOCK_ICON)
-    shut_down_btn.config(image=SHUTDOWN_ICON)
-    copy_btn.config(image=COPY_ICON)
-    copy_move_btn.config(image=COPY_MOVE_ICON)
-    download_btn.config(image=DOWNLOAD_ICON)
-    download_folder_btn.config(image=DOWNLOAD_FOLDER_ICON)
-    
-    cmd_btn.config(image =RUN_ICON)
-    lock_usr_btn.config(image=LOCK_USER_ICON)
-    unlock_usr_btn.config(image=UNLOCK_USER_ICON)
-    change_passwd_btn.config(image=CHANGE_PASSWD_ICON)
-    user_add_btn.config(image=USER_ADD_ICON)
-    user_del_btn.config(image=USER_DEL_ICON)
-    refresh_btn.config(image=REFRESH_ICON)
-    stop_btn.config(image=STOP_ICON)
-
-
-    msg_btn.image           = MESSAGE_ICON
-    lock_btn.image          = LOCK_ICON
-    shut_down_btn.image     = SHUTDOWN_ICON
-    copy_btn.image          = COPY_ICON
-    copy_move_btn.image     = COPY_MOVE_ICON
-    download_btn.image      = DOWNLOAD_ICON
-    download_folder_btn.image= DOWNLOAD_FOLDER_ICON
-    cmd_btn.image           = RUN_ICON
-    lock_usr_btn.image      = LOCK_USER_ICON
-    unlock_usr_btn.image    = UNLOCK_USER_ICON
-    change_passwd_btn.image = CHANGE_PASSWD_ICON
-    user_add_btn.image      = USER_ADD_ICON
-    user_del_btn.image      = USER_DEL_ICON
-    refresh_btn.image       = REFRESH_ICON
-    stop_btn.image          = STOP_ICON
-    
-    # list_of_elements = [
-    # username_label, username_entry, password_label, password_entry, connect_btn, sep_u_r,
-                # cmd_entry, isSUDO_check_box, cmd_btn, sep_r_i,
-    # src_file_label, src_browse_btn, des_file_label, des_browse_btn,copy_btn, sep_i_c,
-                # msg_btn,lock_btn,shut_down_btn, sep_i_c
-            # ]
-
-    #cmd_entry.place(relx=0, rely=0, relwidth=1)
-    #cmd_entry.insert(0,"Command to execute")
-
-    main_frame.update()
-    # rearrange.grid_arrange(main_frame, list_of_elements)
-   
-    #y_position = cmd_entry.winfo_height()
-    #print("y_position: ", y_position)
-
-    
-    rearrange.basic_frame_h_pack(info_frame,       [isSUDO_check_box, cmd_btn, stop_btn, msg_btn, lock_btn, shut_down_btn, refresh_btn])
-    rearrange.basic_frame_h_pack(user_frame,       [isDISP_check_box, unlock_usr_btn, lock_usr_btn, change_passwd_btn, user_add_btn, user_del_btn])
-    rearrange.basic_frame_h_pack(copy_btn_panel,   [copy_btn, copy_move_btn, download_btn, download_folder_btn])
-    rearrange.basic_frame_h_pack(processing_frame, [processing_label])
-
-    rearrange.basic_frame_v_pack(connection_frame, [username_label, username_entry, password_label, password_entry, connect_btn])
-    rearrange.basic_frame_v_pack(command_frame,    [cmd_entry, info_frame, user_frame , processing_frame], command_frame_separator_list)
-    rearrange.basic_frame_hv_pack(copy_Frame,      [[src_browse_btn, src_file_label], [des_browse_btn, des_file_label], [copy_btn_panel, copy_btn_panel]])
-    rearrange.basic_frame_v_pack(other_Frame,      [short_form_btn, help_btn, exit_btn])
-
-    
-    connection_frame.pack(side="left",anchor="n")                                                               ; ctrl_screen_separator_list[0].pack(side="left",anchor="n")
-    command_frame.pack(side="left", anchor="n", fill="x", expand=True)                                          ; ctrl_screen_separator_list[1].pack(side="left",anchor="n")
-    other_Frame.pack(side="right", anchor="n")                                                                  ; ctrl_screen_separator_list[2].pack(side="right",anchor="n")
-    copy_Frame.pack(side="right", anchor="n")                                                                   ;
-    
-    ctrl_screen.place(relx=0, rely=0, relwidth=1, relheight=0.25)
-    canvas_plus_scroll_bar.place(relx=0, rely=0.25, relwidth=1, relheight=0.75)
-
-    term_screen_scroll_bar.pack(side="right", fil="y")
-    canvas_screen.pack(side="left", fil="both", expand=True)
 
 initialize(main_frame)
 
-term_screen.bind("<Configure>", restructure)
-ctrl_screen.bind("<Configure>", grid_restructure)
-
-restructure(None)
 main_frame.mainloop()

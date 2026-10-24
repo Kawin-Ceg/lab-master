@@ -1,8 +1,9 @@
 # importing the library
 import tkinter as tk
-import start_screen as start
-import scan_screen as scan
-import fast_scan as fs
+from ui import theme
+from ui import start_screen as start
+from ui import scan_screen as scan
+from ui import fast_scan as fs
 import shell_process as sh_process
 import get_password as password_window
 from tkinter import ttk
@@ -38,6 +39,7 @@ def fast_scan_btn_click():
 main_frame = tk.Tk()
 main_frame.title("Lab master")
 main_frame.geometry("800x600")
+theme.apply(main_frame)
 main_frame.resizable(True, True)
 
 
