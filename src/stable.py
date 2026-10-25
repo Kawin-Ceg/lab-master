@@ -36,6 +36,7 @@ def fast_scan_btn_click():
         main_frame.update()
         
 # fixing the properties of the main frame 
+theme.enable_hidpi()
 main_frame = tk.Tk()
 main_frame.title("Lab master")
 main_frame.geometry("800x600")

@@ -8,7 +8,7 @@ import remote_connection as remote_connection
 import json_reader as json_reader
 import find_user as find_user
 from tkinter import filedialog
-from ui import theme
+from ui import theme, settings
 from ui.widgets import HostTile, confirm
 from ui.main_window import MainWindow
 from pathlib import Path
@@ -92,8 +92,9 @@ username_entry =None
 password_entry =None
 cmd_entry      =None
 
+theme.enable_hidpi()                     # before tk.Tk(), or text is blurry at 125 %/150 %
 main_frame = tk.Tk()
-theme.apply(main_frame)
+theme.apply(main_frame, settings.get("theme"))
 
 # Host status keys (see ui/theme.py STATUS). The old *_ICON names are kept
 # so the logic below reads the same as before.
