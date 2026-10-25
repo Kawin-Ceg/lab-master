@@ -71,7 +71,7 @@ ui = None
 
 isSUDO_check_box=None
 
-connect_btn = None
+dashboard_btn = None
 cmd_btn     = None
 copy_btn    = None
 msg_btn     = None
@@ -92,8 +92,8 @@ username_entry =None
 password_entry =None
 cmd_entry      =None
 
-main_frame = tk.Tk()
-theme.apply(main_frame)
+main_frame = None
+#theme.apply(main_frame)
 
 # Host status keys (see ui/theme.py STATUS). The old *_ICON names are kept
 # so the logic below reads the same as before.
@@ -104,8 +104,8 @@ RED_ICON       = "failed"
 YELLOW_ICON    = "running"
 RED_CROSS_ICON = "offline"
 
-src_file_path = tk.StringVar(value="")
-des_file_path = tk.StringVar(value="")
+src_file_path = None #tk.StringVar(value="")
+des_file_path = None #tk.StringVar(value="")
 
 
 class term_btn(HostTile):
@@ -774,6 +774,18 @@ def get_des_file_path():
     
     des_file_path.set( selected_file )
 
+def load_host_list():
+    global list_of_ips
+
+    selected_ips = json_reader.read_any_file(main_frame)
+
+    if not selected_ips:
+        status_bar.message("No host list selected.", error=True)
+        return
+
+    list_of_ips = selected_ips
+
+    status_bar.message(f"Loaded {len(list_of_ips)} hosts.")
 
 
 def stop_all():
@@ -795,12 +807,26 @@ def exit_main():
     main_frame.destroy()
 
 
-def initialize(main_frame):
-    global array_of_term_btns, list_of_ips, username_entry, password_entry, cmd_entry, isSUDO
+def initialize(parent):
+    global main_frame, screen
+    global src_file_path, des_file_path
+    global array_of_term_btns, list_of_ips
+    global username_entry, password_entry, cmd_entry, isSUDO
     global status_bar, ui
 
+    # Reuse the root created by stable.py.
+    main_frame = parent
+
+    # Create a separate frame for the Work Screen.
+    screen = tk.Frame(main_frame)
+    screen.configure(bg=theme.BG)
+
+    # Create Tkinter variables only after the root exists.
+    src_file_path = tk.StringVar(master=main_frame, value="")
+    des_file_path = tk.StringVar(master=main_frame, value="")
+
     array_of_term_btns = []
-    list_of_ips = json_reader.read_any_file(main_frame)  # this function return only the list of the ips scanned
+    list_of_ips = [] #json_reader.read_any_file(main_frame)  # this function return only the list of the ips scanned
 
     actions = {
         "connect":          lambda: connect_all(list_of_ips, username_entry.get(), password_entry.get()),
@@ -825,8 +851,15 @@ def initialize(main_frame):
         "exit":             exit_main,
     }
 
-    ui = MainWindow(main_frame, actions, src_file_path, des_file_path,
-                    source_name=json_reader.last_file_name, host_count=len(list_of_ips))
+    ui = MainWindow(
+        main_frame,
+        actions,
+        src_file_path,
+        des_file_path,
+        source_name=json_reader.last_file_name,
+        host_count=len(list_of_ips),
+        content_frame=screen
+    )
 
     status_bar     = ui.status_bar
     username_entry = ui.username_entry
@@ -842,7 +875,9 @@ def initialize(main_frame):
         status_bar.message("No hosts loaded. Restart and choose a .json or .txt IP list.", error=True)
     username_entry.focus_set()
 
+    screen.place(relwidth=1, relheight=1)
 
-initialize(main_frame)
 
-main_frame.mainloop()
+#initialize(main_frame)
+
+#main_frame.mainloop()

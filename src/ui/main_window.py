@@ -40,29 +40,32 @@ class MainWindow:
 
     SIDEBAR_WIDTH = 320
 
-    def __init__(self, root, actions, src_var, des_var, source_name="", host_count=0):
-        self.root    = root
+    def __init__(self, root, actions, src_var, des_var,
+             source_name="", host_count=0, content_frame=None):
+
+        self.root = root
         self.actions = actions
-        self.busy    = False
+        self.busy = False
         self._action_buttons = []
 
-        root.title("Lab Master")
-        root.geometry("1280x720")
-        root.minsize(1120, 700)
-        root.configure(bg=t.BG)
+        # Use a separate frame for dashboard content.
+        self.content_frame = content_frame if content_frame is not None else root
+        content = self.content_frame
 
-        self.is_sudo    = tk.BooleanVar(value=False)
-        self.is_display = tk.BooleanVar(value=False)
-        self.compact    = tk.BooleanVar(value=False)
-        self.filter_var = tk.StringVar()
-        self.src_var    = src_var
-        self.des_var    = des_var
+        self.is_sudo = tk.BooleanVar(master=root, value=False)
+        self.is_display = tk.BooleanVar(master=root, value=False)
+        self.compact = tk.BooleanVar(master=root, value=False)
+        self.filter_var = tk.StringVar(master=root)
+        self.src_var = src_var
+        self.des_var = des_var
 
-        root.columnconfigure(0, weight=1)
-        root.rowconfigure(1, weight=1)
+        content.configure(bg=t.BG)
+        content.columnconfigure(0, weight=1)
+        content.rowconfigure(1, weight=1)
 
+        # Build dashboard widgets inside the content frame.
         self._build_header(source_name, host_count)
-        body = ttk.Frame(root, style="App.TFrame", padding=(t.M, 0, t.M, t.M))
+        body = ttk.Frame(content, style="App.TFrame", padding=(t.M, 0, t.M, t.M))
         body.grid(row=1, column=0, sticky="nsew")
         body.columnconfigure(1, weight=1)
         body.rowconfigure(0, weight=1)
@@ -81,13 +84,12 @@ class MainWindow:
         self._build_files(main)
         self._build_hosts(main)
 
-        self.status_bar = StatusBar(root)
+        self.status_bar = StatusBar(content)
         self.status_bar.grid(row=2, column=0, sticky="ew")
 
         self._bind_shortcuts()
         self.set_busy(False)
         root.protocol("WM_DELETE_WINDOW", self._wrap(actions["exit"]))
-
     # ------------------------------------------------------------ helpers --
     def _wrap(self, fn):
         """Run an action with every other action disabled, so runs cannot overlap."""
@@ -130,12 +132,13 @@ class MainWindow:
 
     def set_connected(self):
         """After the first connect, Run becomes the only primary action."""
-        self.connect_btn.configure(style="TButton", text="Reconnect missing")
-        Tooltip(self.connect_btn, "Retries hosts that are not connected yet.\nShortcut: Enter in the password field")
+        self.dashboard_btn.configure(style="TButton", text="Reconnect missing")
+        Tooltip(self.dashboard_btn, "Retries hosts that are not connected yet.\nShortcut: Enter in the password field")
 
     # ------------------------------------------------------------- header --
     def _build_header(self, source_name, host_count):
-        header = ttk.Frame(self.root, style="App.TFrame", padding=(t.M, t.S, t.M, t.S))
+        header = ttk.Frame(self.content_frame, style="App.TFrame",
+                   padding=(t.M, t.S, t.M, t.S))
         header.grid(row=0, column=0, sticky="ew")
         ttk.Label(header, text="Lab Master", style="Title.TLabel").pack(side="left")
         detail = f"{host_count} hosts loaded" + (f" from {source_name}" if source_name else "")
@@ -160,10 +163,10 @@ class MainWindow:
         self.password_entry = PasswordEntry(box, width=10)
         self.password_entry.grid(row=1, column=1, sticky="ew", padx=(t.S, 0), pady=t.XS)
 
-        self.connect_btn = self._btn(box, "Connect", "connect",
+        self.dashboard_btn = self._btn(box, "Connect", "connect",
                                      "Connect to every host in the list over SSH",
                                      "Enter in the password field", style="Primary.TButton", icon="connect")
-        self.connect_btn.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(t.S, 0))
+        self.dashboard_btn.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(t.S, 0))
 
         self.username_entry.bind("<Return>", lambda e: self.password_entry.focus_set())
         self.password_entry.bind_entry("<Return>", self._wrap(self.actions["connect"]))

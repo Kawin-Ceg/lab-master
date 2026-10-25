@@ -1,10 +1,11 @@
-# importing the library
 import tkinter as tk
 from ui import theme
 from ui import start_screen as start
 from ui import scan_screen as scan
 from ui import fast_scan as fs
 from ui import reliable_scan as rs
+from ui import host_review as hr
+import work_screen as ws
 import shell_process as sh_process
 import get_password as password_window
 from tkinter import ttk
@@ -28,6 +29,13 @@ def switch_to_fastscan_page():
 
 def switch_to_reliable_scan_page():
     rs.screen.tkraise()
+
+def switch_to_host_review_page():
+    hr.screen.tkraise()
+
+def switch_to_work_screen():
+    ws.screen.tkraise()
+
 
 def go_back_to_scan_methods():
     scan.screen.tkraise()
@@ -171,6 +179,8 @@ def finish_scan(stopped=False):
     fs.stop_btn.config(state="disabled")
     fs.back_btn.config(state="normal")
     fs.home_btn.config(state="normal")
+    fs.review_btn.config(state="normal")
+    
 
 
 def fail_scan(message):
@@ -202,10 +212,14 @@ main_frame.resizable(True, True)
 start.initialize(main_frame)
 scan.initialize(main_frame)
 fs.initialize(main_frame)
+rs.initialize(main_frame)
+hr.initialize(main_frame)
+
+ws.initialize(main_frame)
+
 fs.scan_btn.config(command=fast_scan_btn_click)
 fs.stop_btn.config(command=stop_fast_scan)
 
-rs.initialize(main_frame)
 # Reliable Scan controls
 rs.scan_btn.config(
     command=lambda: rs.start_scan(main_frame)
@@ -223,6 +237,14 @@ rs.back_btn.config(
 rs.home_btn.config(
     command=go_home
 )
+
+
+hr.dashboard_btn.config(
+    command=switch_to_work_screen
+)
+
+hr.back_btn.config(command=go_back_to_scan_methods)
+hr.home_btn.config(command=go_home)
 
 # Start screen -> Choose scan method
 start.start_btn.config(
@@ -262,6 +284,14 @@ rs.back_btn.config(
 
 rs.home_btn.config(
     command=go_home
+)
+
+fs.review_btn.config(
+    command=switch_to_host_review_page
+)
+
+rs.review_btn.config(
+    command=switch_to_host_review_page
 )
 
 

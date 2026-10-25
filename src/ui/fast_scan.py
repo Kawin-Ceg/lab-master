@@ -17,6 +17,7 @@ stop_event = threading.Event()
 
 back_btn = None
 home_btn = None
+review_btn = None
 
 status_label = None
 progress_bar = None
@@ -30,7 +31,7 @@ output_count = 0
 
 def initialize(add_to_frame):
     global screen, label, text_box, scan_btn, stop_btn, text_area
-    global back_btn, home_btn
+    global back_btn, home_btn, review_btn
     global status_label, progress_bar, target_label, output_count_label
     global output_count
 
@@ -192,9 +193,8 @@ def initialize(add_to_frame):
     )
     output_count_label.pack(anchor="w", pady=(t.XS, 0))
 
-    # ---------------------------------------------------------
+        # ---------------------------------------------------------
     # Navigation
-    # IMPORTANT: Pack navigation before the expanding output.
     # ---------------------------------------------------------
     nav = ttk.Frame(screen)
     nav.pack(side="bottom", fill="x", pady=(t.S, 0))
@@ -209,7 +209,15 @@ def initialize(add_to_frame):
         nav,
         text="⌂ Home"
     )
-    home_btn.pack(side="right")
+    home_btn.pack(side="left", padx=(t.S, 0))
+
+    review_btn = ttk.Button(
+        nav,
+        text="Review Hosts →",
+        style="Primary.TButton",
+        state="disabled"
+    )
+    review_btn.pack(side="right")
 
     # ---------------------------------------------------------
     # Scan output
