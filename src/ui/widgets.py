@@ -12,7 +12,7 @@ from . import theme as t
 class Tooltip:
     """Shows `text` after a short delay on hover, or on focus reached with Tab."""
 
-    DELAY_MS = 500
+    DELAY_MS = 1000
     keyboard_nav = False      # True after Tab, False after a mouse click
 
     def __init__(self, widget, text):
@@ -41,26 +41,46 @@ class Tooltip:
 
     def _cancel(self):
         if self.job:
-            self.widget.after_cancel(self.job)
+            try: 
+                self.widget.after_cancel(self.job) 
+            except tk.TclError: 
+                pass
+            
             self.job = None
 
     def _show(self):
-        if self.tip or not self.text:
+        self.job = None
+
+        if self.tip is not None or not self.text:
             return
+
         x = self.widget.winfo_rootx() + t.S
         y = self.widget.winfo_rooty() + self.widget.winfo_height() + t.XS
+
         self.tip = tk.Toplevel(self.widget)
         self.tip.wm_overrideredirect(True)
         self.tip.wm_geometry(f"+{x}+{y}")
-        tk.Label(self.tip, text=self.text, justify="left", wraplength=320,
-                 bg=t.TEXT, fg=t.BG, font=t.FONTS["caption"],
-                 padx=t.S, pady=t.XS).pack()
+
+        tk.Label(
+            self.tip,
+            text=self.text,
+            justify="left",
+            wraplength=320,
+            bg=t.TEXT,
+            fg=t.BG,
+            font=t.FONTS["caption"],
+            padx=t.S,
+            pady=t.XS
+        ).pack()
 
     def _hide(self, _event=None):
         self._cancel()
+
         if self.tip:
             self.tip.destroy()
             self.tip = None
+
+            
 
 
 # ------------------------------------------------------------------ icons --
