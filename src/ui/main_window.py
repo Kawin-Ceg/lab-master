@@ -47,31 +47,37 @@ SHORTCUTS = [
 
 class MainWindow:
 
-    def __init__(self, root, actions, src_var, des_var, source_name="", host_count=0):
+    def __init__(self, root, actions, src_var, des_var, source_name="", host_count=0, content_frame=None):
         self.root    = root
         self.actions = actions
         self.busy    = False
         self.host_count = host_count
         self._action_buttons = []
 
+        # The dashboard is built inside content_frame (stable.py shows it after
+        # the scan screens). Standalone, it fills the root window directly.
+        self.content_frame = content_frame if content_frame is not None else root
+
         root.title("Lab Master")
         self._size_window()
         root.configure(bg=t.BG)
 
-        self.is_sudo    = tk.BooleanVar(value=False)
-        self.is_display = tk.BooleanVar(value=False)
-        self.compact    = tk.BooleanVar(value=bool(settings.get("compact")))
-        self.filter_var = tk.StringVar()
-        self.status_var = tk.StringVar(value="")
-        self.sort_var   = tk.StringVar(value=settings.get("sort") if settings.get("sort") in SORTS else "ip")
+        self.is_sudo    = tk.BooleanVar(master=root, value=False)
+        self.is_display = tk.BooleanVar(master=root, value=False)
+        self.compact    = tk.BooleanVar(master=root, value=bool(settings.get("compact")))
+        self.filter_var = tk.StringVar(master=root)
+        self.status_var = tk.StringVar(master=root, value="")
+        self.sort_var   = tk.StringVar(master=root, value=settings.get("sort") if settings.get("sort") in SORTS else "ip")
         self.src_var    = src_var
         self.des_var    = des_var
 
-        root.columnconfigure(0, weight=1)
-        root.rowconfigure(1, weight=1)
+        content = self.content_frame
+        content.columnconfigure(0, weight=1)
+        content.rowconfigure(1, weight=1)
 
+        # Build dashboard widgets inside the content frame.
         self._build_header(source_name, host_count)
-        body = ttk.Frame(root, style="App.TFrame", padding=(t.M, 0, t.M, t.M))
+        body = ttk.Frame(content, style="App.TFrame", padding=(t.M, 0, t.M, t.M))
         body.grid(row=1, column=0, sticky="nsew")
         body.columnconfigure(1, weight=1)
         body.rowconfigure(0, weight=1)
@@ -91,7 +97,7 @@ class MainWindow:
         self._build_command(main)
         self._build_hosts(main)
 
-        self.status_bar = StatusBar(root)
+        self.status_bar = StatusBar(content)
         self.status_bar.grid(row=2, column=0, sticky="ew")
 
         self._bind_shortcuts()
@@ -168,7 +174,8 @@ class MainWindow:
 
     # ------------------------------------------------------------- header --
     def _build_header(self, source_name, host_count):
-        header = ttk.Frame(self.root, style="App.TFrame", padding=(t.M, t.S, t.M, t.S))
+        header = ttk.Frame(self.content_frame, style="App.TFrame",
+                   padding=(t.M, t.S, t.M, t.S))
         header.grid(row=0, column=0, sticky="ew")
         ttk.Label(header, text="Lab Master", style="Title.TLabel").pack(side="left")
         detail = f"{host_count} hosts loaded" + (f" from {source_name}" if source_name else "")
@@ -510,4 +517,11 @@ class MainWindow:
             ("<F1>", lambda e: self.show_help()),
             ("<Control-q>", a("exit")),
         ]:
-            r.bind(seq, fn)
+            r.bind(seq, lambda e, f=fn: f(e) if self._in_dashboard() else None)
+
+    def _in_dashboard(self):
+        """True when keyboard focus is inside the dashboard, not on another stable.py screen."""
+        if self.content_frame is self.root:
+            return True
+        focus = self.root.focus_get()
+        return focus is not None and str(focus).startswith(str(self.content_frame))

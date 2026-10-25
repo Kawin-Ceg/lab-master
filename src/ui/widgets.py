@@ -128,6 +128,7 @@ class Tooltip:
 
     def _hide(self, _event=None):
         self._cancel()
+
         if self.tip:
             try:
                 self.tip.destroy()
@@ -136,6 +137,8 @@ class Tooltip:
             self.tip = None
         if Tooltip._current is self:
             Tooltip._current = None
+
+            
 
 
 # ------------------------------------------------------------------ icons --

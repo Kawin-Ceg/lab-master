@@ -5,6 +5,9 @@ Business logic stays in get_password.py and work_screen.py.
 """
 import tkinter as tk
 from tkinter import ttk, filedialog
+from pathlib import Path
+from datetime import date
+import re
 
 from . import theme as t
 from .widgets import Dialog, PasswordEntry, Tooltip, confirm, icon_for
@@ -213,6 +216,7 @@ def ask_users_to_delete(main_frame):
 def host_actions(main_frame, tile, on_message, on_lock, on_shutdown, on_terminal):
     """Action sheet for one host. Each callback receives no arguments."""
     title = tile.hostname or tile.ip_address
+    print(tile.ip_address)
     connected = tile.status not in ("not_connected", "offline")
     subtitle = f"{tile.ip_address} · {t.STATUS[tile.status][1]}"
     if not connected:
@@ -234,6 +238,8 @@ def host_actions(main_frame, tile, on_message, on_lock, on_shutdown, on_terminal
     items = [
         ("Open terminal",  "Opens an SSH session to this host in a new terminal window (Linux only).",
          lambda: run(on_terminal), "terminal", "!disabled"),
+        ("View Command History", "View previously executed commands and their output.",
+         lambda: run(lambda: show_output(main_frame, tile.ip_address)), "output", "!disabled"),
         ("Send message…",  "Shows a desktop notification on this host.", lambda: run(on_message), "message", state),
         ("Lock screen",    "Locks every session on this host.",          lambda: run(on_lock),    "lock",    state),
     ]
@@ -251,3 +257,238 @@ def host_actions(main_frame, tile, on_message, on_lock, on_shutdown, on_terminal
 
     ttk.Button(dlg.buttons, text="Close", command=dlg.cancel).pack(side="right")
     dlg.run(focus=dlg.body.winfo_children()[0])
+
+# ------------------------------------------------------------ output viewer --
+def show_output(main_frame, ip):
+    """Display command history grouped by date and time."""
+
+    log_root = Path("~/Lab_master/logs").expanduser()
+
+    # Find every log file belonging to this host.
+    log_files = sorted(
+        (
+            path
+            for path in log_root.glob("*/*/*")
+            if path.is_file() and path.name == ip
+        ),
+        key=lambda path: (
+            path.parent.parent.name,
+            path.parent.name,
+        ),
+        reverse=True,
+    )
+
+    # Debug information in the terminal.
+    print("\n========== COMMAND HISTORY ==========")
+    print(f"Host: {ip}")
+    print(f"Log directory: {log_root}")
+    print(f"Matching sessions: {len(log_files)}")
+
+    dlg = Dialog(
+        main_frame,
+        "Command History",
+        f"Command execution history for {ip}",
+    )
+
+    container = ttk.Frame(dlg.body)
+    container.pack(fill="both", expand=True)
+
+    scrollbar = ttk.Scrollbar(container, orient="vertical")
+    scrollbar.pack(side="right", fill="y")
+
+    output = tk.Text(
+        container,
+        wrap="word",
+        font=t.FONTS["mono"],
+        height=24,
+        width=90,
+        bg=t.SURFACE,
+        fg=t.TEXT,
+        insertbackground=t.TEXT,
+        relief="flat",
+        highlightthickness=1,
+        highlightbackground=t.BORDER,
+        highlightcolor=t.FOCUS,
+        padx=t.M,
+        pady=t.M,
+        yscrollcommand=scrollbar.set,
+        state="normal",
+    )
+
+    output.pack(side="left", fill="both", expand=True)
+    scrollbar.configure(command=output.yview)
+
+    # Text colours.
+    output.tag_configure(
+        "session",
+        foreground=t.TEXT,
+        font=t.FONTS["heading"],
+    )
+
+    output.tag_configure(
+        "success",
+        foreground=t.STATUS["success"][2],
+    )
+
+    output.tag_configure(
+        "failure",
+        foreground=t.STATUS["failed"][2],
+    )
+
+    output.tag_configure(
+        "command",
+        foreground=t.FOCUS,
+    )
+
+    output.tag_configure(
+        "muted",
+        foreground=t.TEXT_MUTED,
+    )
+
+    output.tag_configure(
+        "body",
+        foreground=t.TEXT,
+    )
+
+    def append(text, tag=None):
+        output.insert(tk.END, text, tag)
+
+    if not log_files:
+        append("No command history found for this host.\n", "muted")
+        append(
+            "\nHistory will appear here after log files are created.",
+            "body",
+        )
+
+    for log_file in log_files:
+        session_date = log_file.parent.parent.name
+        session_time = log_file.parent.name
+
+        # Format the date and time from the directory names.
+        try:
+            from datetime import datetime
+
+            session_datetime = datetime.strptime(
+                f"{session_date} {session_time}",
+                "%Y-%m-%d %H_%M",
+            )
+
+            formatted_datetime = session_datetime.strftime(
+                "%d %b %Y · %H:%M"
+            )
+
+        except ValueError:
+            formatted_datetime = f"{session_date} · {session_time}"
+
+        print(f"\n--- Session: {formatted_datetime} ---")
+        print(f"File: {log_file}")
+
+        append("━" * 52 + "\n", "muted")
+        append(f"{formatted_datetime}\n", "session")
+        append("━" * 52 + "\n\n", "muted")
+
+        try:
+            raw = log_file.read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
+
+            # Print the actual file contents in the terminal.
+            print(raw)
+
+        except OSError as exc:
+            print(f"ERROR reading {log_file}: {exc}")
+            append(f"Could not read this log file:\n{exc}\n\n", "failure")
+            continue
+
+        if not raw.strip():
+            append("This session's log file is empty.\n\n", "muted")
+            continue
+
+        # Split the file into command records.
+        records = re.split(
+            r"(?=^CMD_EXECUTED = )",
+            raw,
+            flags=re.MULTILINE,
+        )
+
+        for record in records:
+            record = record.strip("\n")
+
+            if not record.strip():
+                continue
+
+            lines = record.splitlines()
+            command_line = lines[0]
+
+            if not command_line.startswith("CMD_EXECUTED = "):
+                append(record + "\n\n", "body")
+                continue
+
+            command = command_line[len("CMD_EXECUTED = "):]
+
+            # Locate the exit code.
+            exit_index = next(
+                (
+                    i
+                    for i, line in enumerate(lines)
+                    if line.startswith("EXIT_CODE: ")
+                ),
+                None,
+            )
+
+            if exit_index is None:
+                result_lines = lines[1:]
+                exit_code = None
+            else:
+                result_lines = lines[1:exit_index]
+
+                try:
+                    exit_code = int(
+                        lines[exit_index].split(":", 1)[1].strip()
+                    )
+                except ValueError:
+                    exit_code = None
+
+            # Command status.
+            if exit_code == 0:
+                append(f"{t.STATUS['success'][0]}  ", "success")
+            elif exit_code is not None:
+                append(f"{t.STATUS['failed'][0]}  ", "failure")
+            else:
+                append(f"{t.STATUS['running'][0]}  ", "muted")
+
+            append(command + "\n", "command")
+
+            if exit_code is None:
+                append("   Exit code: unavailable\n", "muted")
+            else:
+                status_tag = (
+                    "success" if exit_code == 0 else "failure"
+                )
+                append(
+                    f"   Exit code: {exit_code}\n",
+                    status_tag,
+                )
+
+            if result_lines:
+                append(
+                    "\n".join(result_lines) + "\n",
+                    "body",
+                )
+            else:
+                append("(No output)\n", "muted")
+
+            append("\n")
+
+    # Make the completed history read-only.
+    output.configure(state="disabled")
+    output.yview_moveto(0)
+
+    ttk.Button(
+        dlg.buttons,
+        text="Close",
+        command=dlg.cancel,
+    ).pack(side="right")
+
+    dlg.run()
