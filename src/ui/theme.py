@@ -250,6 +250,18 @@ def _configure(root):
     style.configure("BannerMuted.TLabel", background=SURFACE_2, foreground=TEXT_MUTED, font=FONTS["caption"])
     style.configure("BannerStep.TLabel", background=SURFACE_2, foreground=FOCUS, font=FONTS["strong"])
 
+    # ---- step indicator (01 Scan › 02 Review hosts › 03 Dashboard)
+    style.configure("Step.TLabel",        background=SURFACE, foreground=TEXT_MUTED, font=FONTS["caption"])
+    style.configure("StepNum.TLabel",     background=SURFACE, foreground=TEXT_MUTED, font=FONTS["strong"])
+    style.configure("StepActive.TLabel",  background=SURFACE, foreground=TEXT, font=FONTS["strong"])
+    style.configure("StepNumActive.TLabel", background=SURFACE, foreground=FOCUS, font=FONTS["strong"])
+
+    # ---- option cards (choose scan method)
+    style.configure("Option.TFrame", background=SURFACE, bordercolor=BORDER, relief="solid", borderwidth=1)
+    style.configure("OptionHover.TFrame", background=SURFACE, bordercolor=FOCUS, relief="solid", borderwidth=1)
+    style.configure("OptionTitle.TLabel", background=SURFACE, foreground=TEXT, font=FONTS["heading"])
+    style.configure("Big.TLabel", background=SURFACE, foreground=TEXT, font=FONTS["title"])
+
     # ---- text
     style.configure("TLabel",          background=SURFACE, foreground=TEXT)
     style.configure("Muted.TLabel",    background=SURFACE, foreground=TEXT_MUTED, font=FONTS["caption"])
@@ -317,6 +329,11 @@ def _configure(root):
     style.map("TMenubutton",
               background=[("active", SURFACE_3), ("pressed", SURFACE_3)],
               bordercolor=[("focus", FOCUS)])
+
+    style.configure("TSpinbox", fieldbackground=SURFACE_2, background=SURFACE_2, foreground=TEXT,
+                    bordercolor=BORDER, lightcolor=SURFACE_2, darkcolor=SURFACE_2,
+                    arrowcolor=TEXT_MUTED, padding=(S, XS))
+    style.map("TSpinbox", bordercolor=[("focus", FOCUS)], background=[("active", SURFACE_3)])
 
     style.configure("TCheckbutton", background=SURFACE, foreground=TEXT,
                     indicatorbackground=SURFACE_2, indicatorforeground=TEXT,

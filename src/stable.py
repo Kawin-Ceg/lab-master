@@ -5,10 +5,9 @@ from ui import scan_screen as scan
 from ui import fast_scan as fs
 from ui import reliable_scan as rs
 from ui import host_review as hr
+from ui import dialogs
+import json_reader
 import work_screen as ws
-import shell_process as sh_process
-import get_password as password_window
-from tkinter import ttk
 import threading
 import subprocess
 
@@ -19,7 +18,6 @@ def show(screen):
     screen.tkraise()
     screen.focus_set()
 
-password=""
 
 def switch_to_start_page():
     show(start.screen)
@@ -50,92 +48,137 @@ def go_back_to_scan_methods():
 def go_home():
     show(start.screen)
 
+
+# -------------------------------------------------------------
+# Review -> Dashboard
+# -------------------------------------------------------------
+def open_dashboard():
+    """Load the hosts chosen on the Review screen into the dashboard and show it."""
+    ips = hr.hosts_for_dashboard()
+    if not ips:
+        return
+
+    # A Reliable scan already asked for SSH credentials: reuse them so the
+    # admin does not type them a second time on the dashboard.
+    username = password = ""
+    if hr.source_name == "Reliable scan":
+        username = rs.username_entry.get().strip()
+        password = rs.password_entry.get()
+
+    ws.load_hosts(ips, source=hr.source_name, username=username, password=password)
+    show(ws.screen)
+    if username and password:
+        ws.ui.connect_btn.focus_set()
+    else:
+        ws.username_entry.focus_set()
+
+
+# -------------------------------------------------------------
+# Open a saved IP list (skips scanning)
+# -------------------------------------------------------------
+def open_saved_list():
+    ips = json_reader.read_any_file(main_frame)
+    if not ips:
+        return
+    hr.set_hosts(ips, source=json_reader.last_file_name or "saved list")
+    show(hr.screen)
+
+
+# -------------------------------------------------------------
+# Fast scan
+# -------------------------------------------------------------
 def fast_scan_btn_click():
+    import shlex
+
     cmd = fs.text_box.get().strip()
 
     if not cmd:
-        fs.text_area.insert(tk.END, "Please enter a scan command.\n")
+        append_scan_output("Please enter a scan command.\n")
         return
 
     if fs.scan_thread and fs.scan_thread.is_alive():
         return
 
+    try:
+        args = shlex.split(cmd)
+    except ValueError as exc:
+        append_scan_output(f"Could not read the command: {exc}\n")
+        return
+
+    # masscan needs root: ask for the sudo password only when the command uses
+    # "sudo -S" (read the password from stdin), and explain what it is for.
+    sudo_password = None
+    if args and args[0] == "sudo" and "-S" in args:
+        sudo_password = dialogs.ask_password(
+            main_frame,
+            title="Password for sudo",
+            subtitle="The scan runs masscan with sudo on this computer. "
+                     "Enter your password for this computer (not the lab machines).",
+            ok_text="Start scan")
+        if not sudo_password:
+            append_scan_output("Scan cancelled: no sudo password entered.\n")
+            return
+
+    hr.SCAN_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        hr.RESULTS_FILE.unlink()             # never show results from an older scan
+    except FileNotFoundError:
+        pass
+
     fs.stop_event.clear()
 
-    fs.scan_btn.config(state="disabled")
-    fs.stop_btn.config(state="normal")
-    fs.back_btn.config(state="disabled")
-    fs.home_btn.config(state="disabled")
+    fs.stop_btn.state(["!disabled"])
+    fs.back_btn.state(["disabled"])
+    fs.home_btn.state(["disabled"])
+    fs.set_review_count(0)
 
     fs.text_area.delete("1.0", tk.END)
-    fs.text_area.insert(tk.END, "Starting scan...\n")
+    fs.reset_output_count()
+    fs.set_status("Scanning…", running=True, target=cmd)
+    append_scan_output("Starting scan...\n")
 
     def run_scan():
-        import shlex
-        import time
-
         process = None
         stopped = False
 
         try:
-            args = shlex.split(cmd)
-
+            # Run inside SCAN_DIR so "-oJ ips.json" is written where the
+            # Review screen reads it.
             process = subprocess.Popen(
                 args,
+                cwd=str(hr.SCAN_DIR),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.PIPE,
                 text=True,
                 bufsize=1
             )
-
-            
-
             fs.scan_process = process
 
-            # Poll for output without blocking on readline().
-            while process.poll() is None:
+            if process.stdin:
+                if sudo_password:
+                    process.stdin.write(sudo_password + "\n")
+                    process.stdin.flush()
+                process.stdin.close()
+
+            # readline() returns "" when the process ends or is terminated by
+            # Stop; this works on Linux and Windows (select() on pipes does not).
+            for line in iter(process.stdout.readline, ""):
+                main_frame.after(0, lambda output=line: append_scan_output(output))
                 if fs.stop_event.is_set():
                     stopped = True
                     process.terminate()
                     break
 
-                # Read available output without waiting indefinitely.
-                import os
-                import select
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
 
-                ready, _, _ = select.select(
-                    [process.stdout],
-                    [],
-                    [],
-                    0.1
-                )
-
-                if ready:
-                    line = process.stdout.readline()
-                    if line:
-                        main_frame.after(
-                            0,
-                            lambda output=line: append_scan_output(output)
-                        )
-
-            if process.poll() is None:
-                try:
-                    process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
-
-            # Drain any remaining output.
-            if process.stdout:
-                remaining = process.stdout.read()
-                if remaining:
-                    main_frame.after(
-                        0,
-                        lambda output=remaining: append_scan_output(output)
-                    )
-
-            main_frame.after(0, lambda: finish_scan(stopped))
+            stopped = stopped or fs.stop_event.is_set()
+            code = process.returncode
+            main_frame.after(0, lambda: finish_scan(stopped, code))
 
         except Exception as exc:
             error_message = str(exc)
@@ -157,10 +200,9 @@ def fast_scan_btn_click():
 def stop_fast_scan():
     fs.stop_event.set()
 
-    fs.stop_btn.config(state="disabled")
-
-    fs.text_area.insert(tk.END, "\nStopping scan...\n")
-    fs.text_area.see(tk.END)
+    fs.stop_btn.state(["disabled"])
+    fs.set_status("Stopping…", running=True)
+    append_scan_output("\nStopping scan...\n")
 
     process = fs.scan_process
 
@@ -171,41 +213,50 @@ def stop_fast_scan():
             pass
 
 
-
-def finish_scan(stopped=False):
+def finish_scan(stopped=False, code=0):
     if stopped:
         message = "\nScan stopped by user.\n"
+        fs.set_status("Stopped", running=False)
+    elif code:
+        message = f"\nScan ended with an error (exit code {code}).\n"
+        fs.set_status("Failed", running=False)
     else:
         message = "\nScan process finished.\n"
+        fs.set_status("Finished", running=False)
 
-    fs.text_area.insert(tk.END, message)
-    fs.text_area.see(tk.END)
+    append_scan_output(message)
 
-    fs.scan_btn.config(state="normal")
-    fs.stop_btn.config(state="disabled")
-    fs.back_btn.config(state="normal")
-    fs.home_btn.config(state="normal")
-    fs.review_btn.config(state="normal")
-    
+    fs.stop_btn.state(["disabled"])
+    fs.back_btn.state(["!disabled"])
+    fs.home_btn.state(["!disabled"])
+
+    # Load whatever the scan saved straight into the Review screen.
+    hr.load_hosts()
+    found = len(hr.hosts)
+    if found:
+        append_scan_output(f"{found} host(s) with SSH found. Press “Review hosts” to continue.\n")
+    elif not stopped:
+        append_scan_output("No hosts with SSH (port 22) were found.\n")
+    fs.set_review_count(found)
 
 
 def fail_scan(message):
-    fs.text_area.insert(tk.END, f"\nError: {message}\n")
-    fs.text_area.see(tk.END)
+    append_scan_output(f"\nError: {message}\n")
+    fs.set_status("Failed", running=False)
 
-    fs.scan_btn.config(state="normal")
-    fs.stop_btn.config(state="disabled")
-    fs.back_btn.config(state="normal")
-    fs.home_btn.config(state="normal")
+    fs.stop_btn.state(["disabled"])
+    fs.back_btn.state(["!disabled"])
+    fs.home_btn.state(["!disabled"])
 
 
 def append_scan_output(line):
     fs.text_area.insert(tk.END, line)
     fs.text_area.see(tk.END)
+    fs.increment_output_count(line)
 
 
-        
-# fixing the properties of the main frame 
+
+# fixing the properties of the main frame
 theme.enable_hidpi()
 main_frame = tk.Tk()
 main_frame.title("Lab master")
@@ -222,7 +273,8 @@ fs.initialize(main_frame)
 rs.initialize(main_frame)
 hr.initialize(main_frame)
 
-ws.initialize(main_frame)
+# The dashboard starts empty; the Review screen fills it via open_dashboard().
+ws.initialize(main_frame, on_new_scan=go_back_to_scan_methods)
 
 fs.scan_btn.config(command=fast_scan_btn_click)
 fs.stop_btn.config(command=stop_fast_scan)
@@ -237,17 +289,9 @@ rs.stop_btn.config(
     state="disabled"
 )
 
-rs.back_btn.config(
-    command=go_back_to_scan_methods
-)
-
-rs.home_btn.config(
-    command=go_home
-)
-
 
 hr.dashboard_btn.config(
-    command=switch_to_work_screen
+    command=open_dashboard
 )
 
 hr.back_btn.config(command=go_back_to_scan_methods)
@@ -261,6 +305,11 @@ start.start_btn.config(
 # Choose scan method -> Fast scan
 scan.fast_scan_btn.config(
     command=switch_to_fastscan_page
+)
+
+# Choose scan method -> Open a saved list
+scan.open_list_btn.config(
+    command=open_saved_list
 )
 
 # Choose scan method -> Reliable scan
@@ -305,10 +354,9 @@ rs.review_btn.config(
 
 
 # intialily setting the page to be at teh start page
+# (no password prompt here any more: each step asks for what it needs, once)
 show(start.screen)
-password = password_window.get_password(main_frame)
 
 
-#print("l" , password, "o", password)
 # start the listening of the events and view of screen
 main_frame.mainloop()

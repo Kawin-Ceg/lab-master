@@ -776,18 +776,56 @@ def get_des_file_path():
     
     des_file_path.set( selected_file )
 
-def load_host_list():
-    global list_of_ips
+def load_hosts(ips, source="", username="", password=""):
+    """
+    Replace the dashboard's host list (called by stable.py after a scan).
+    Closes existing SSH connections, rebuilds the tiles, and pre-fills the
+    SSH credentials when the scan already asked for them.
+    """
+    global list_of_ips, list_of_clients, array_of_term_btns, isReconnect
 
+    close_all(list_of_clients)
+    list_of_clients = []
+    connected_ips_list.clear()
+    missing_ips_list.clear()
+    isReconnect = False
+
+    ui.grid.clear()
+    array_of_term_btns = []
+    list_of_ips = list(ips)
+    get_term_btn()
+
+    ui.set_source(source, len(list_of_ips))
+    ui.reset_connection()
+    ui.refresh_counts()
+
+    if username:
+        username_entry.delete(0, "end")
+        username_entry.insert(0, username)
+    if password:
+        password_entry.entry.delete(0, "end")
+        password_entry.entry.insert(0, password)
+
+    if not list_of_ips:
+        status_bar.message("No hosts to show. Use New scan to find machines.", error=True)
+        username_entry.focus_set()
+    elif username and password:
+        status_bar.message(f"{len(list_of_ips)} hosts loaded. Credentials from the scan are filled in: press Connect.")
+        ui.connect_btn.focus_set()
+    else:
+        status_bar.message(f"{len(list_of_ips)} hosts loaded. Enter the SSH username and password, then press Connect.")
+        username_entry.focus_set()
+
+
+def load_host_list():
+    """Ask for a .json/.txt host list file and load it."""
     selected_ips = json_reader.read_any_file(main_frame)
 
     if not selected_ips:
         status_bar.message("No host list selected.", error=True)
         return
 
-    list_of_ips = selected_ips
-
-    status_bar.message(f"Loaded {len(list_of_ips)} hosts.")
+    load_hosts(selected_ips, json_reader.last_file_name)
 
 
 def stop_all():
@@ -809,8 +847,11 @@ def exit_main():
     main_frame.destroy()
 
 
-def initialize(parent, ips=None):
-    """Build the dashboard inside `parent`. `ips` is the host list (may be empty)."""
+def initialize(parent, ips=None, on_new_scan=None):
+    """
+    Build the dashboard inside `parent`. `ips` is the host list (may be empty).
+    `on_new_scan` adds a "New scan" button that returns to the scan flow (stable.py).
+    """
     global main_frame, screen
     global src_file_path, des_file_path
     global array_of_term_btns, list_of_ips
@@ -851,6 +892,7 @@ def initialize(parent, ips=None):
         "download":         download_all,
         "download_folder":  download_folder_all,
         "exit":             exit_main,
+        "new_scan":         on_new_scan,
     }
 
     ui = MainWindow(
@@ -871,10 +913,16 @@ def initialize(parent, ips=None):
 
     username_entry.insert(0, common_user)
 
+    if on_new_scan:
+        ui.grid.empty_text = "No hosts yet. Use “New scan” (top right) to find machines."
+
     get_term_btn()
     ui.refresh_counts()
     if not list_of_ips:
-        status_bar.message("No hosts loaded. Restart and choose a .json or .txt IP list.", error=True)
+        if on_new_scan:
+            status_bar.message("No hosts yet. Use New scan to find machines.")
+        else:
+            status_bar.message("No hosts loaded. Restart and choose a .json or .txt IP list.", error=True)
     username_entry.focus_set()
 
     screen.place(relwidth=1, relheight=1)

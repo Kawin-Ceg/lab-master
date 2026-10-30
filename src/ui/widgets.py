@@ -201,6 +201,21 @@ def button(parent, text, command, tooltip="", shortcut="", style="TButton", icon
     return btn
 
 
+STEPS = ("Scan", "Review hosts", "Dashboard")
+
+
+def step_indicator(parent, current):
+    """One-line progress indicator for the scan flow; `current` is 1, 2 or 3."""
+    bar = ttk.Frame(parent)
+    for i, name in enumerate(STEPS, start=1):
+        active = i == current
+        ttk.Label(bar, text=f"{i:02d}", style="StepNumActive.TLabel" if active else "StepNum.TLabel").pack(side="left")
+        ttk.Label(bar, text=name, style="StepActive.TLabel" if active else "Step.TLabel").pack(side="left", padx=(t.XS, 0))
+        if i < len(STEPS):
+            ttk.Label(bar, text="›", style="Step.TLabel").pack(side="left", padx=t.S)
+    return bar
+
+
 def card(parent, title):
     return ttk.LabelFrame(parent, text=title, style="Card.TLabelframe")
 
@@ -390,6 +405,15 @@ def tile_width():
     return t.px(188)
 
 
+def fit_text(text, font, max_px):
+    """Shorten `text` with "…" so it is at most `max_px` wide in `font`."""
+    if font.measure(text) <= max_px:
+        return text
+    while text and font.measure(text + "…") > max_px:
+        text = text[:-1]
+    return text + "…"
+
+
 class HostTile:
     """
     One machine in the host grid.
@@ -504,9 +528,11 @@ class HostTile:
         """users: list of [username, 'ssh' | 'local'] as produced by find_user."""
         self.hostname = hostname.strip()
         self.users    = users or []
-        self.name_label.configure(text=self.hostname or self.ip_address)
+        room = tile_width() - t.px(4) - 2 * t.S - t.XS        # strip + inner padding
+        self.name_label.configure(text=fit_text(self.hostname or self.ip_address, t.FONTS["strong"], room))
         self.ip_label.configure(text=self.ip_address if self.hostname else "")
-        lines = [("Remote: " if kind == "ssh" else "Local: ") + name for name, kind in self.users[:3]]
+        lines = [fit_text(("Remote: " if kind == "ssh" else "Local: ") + name, t.FONTS["caption"], room)
+                 for name, kind in self.users[:3]]
         if len(self.users) > 3:
             lines.append(f"+{len(self.users) - 3} more")
         self.users_label.configure(text="\n".join(lines) if lines else "No users logged in")
@@ -530,6 +556,8 @@ class HostTile:
 
     def _update_tooltip(self):
         users = ", ".join(u[0] for u in self.users) or "none"
+        if len(users) > 120:
+            users = users[:117] + "…"
         self.tooltip.text = (f"{self.hostname or '(hostname unknown)'}\n{self.ip_address}\n"
                              f"Status: {t.STATUS[self.status][1]}\nLogged in: {users}\n"
                              "Click or Enter: host actions · Right-click: more")
@@ -588,6 +616,17 @@ class HostGrid(ttk.Frame):
         t.on_change(self._retheme)
         self.after(self.SPIN_MS, self._tick)
 
+    empty_text = "No hosts loaded. Restart and choose an IP list file."
+
+    def clear(self):
+        """Remove every tile (used when a new host list is loaded)."""
+        for tile in self.tiles:
+            tile.tooltip._hide()
+            tile.cover.destroy()
+        self.tiles = []
+        self.visible = []
+        self.reflow()
+
     def add(self, tile):
         tile._grid = self
         for key, dx, dy in (("<Left>", -1, 0), ("<Right>", 1, 0), ("<Up>", 0, -1), ("<Down>", 0, 1)):
@@ -645,7 +684,7 @@ class HostGrid(ttk.Frame):
         self.canvas.yview_moveto(0)
         if not self.visible:
             if not self.tiles:
-                text = "No hosts loaded. Restart and choose an IP list file."
+                text = self.empty_text
             elif self.status_filter:
                 text = f"No hosts are {t.STATUS[self.status_filter][1].lower()}."
             else:

@@ -57,8 +57,9 @@ def ask_ip_file(main_frame):
 
 
 # -------------------------------------------------------------- password --
-def ask_password(main_frame):
-    dlg = Dialog(main_frame, "Enter password")
+def ask_password(main_frame, title="Enter password", subtitle="", ok_text="OK"):
+    """Returns the password, or "" when cancelled."""
+    dlg = Dialog(main_frame, title, subtitle)
     entry = PasswordEntry(dlg.body, width=28)
     entry.pack(fill="x")
 
@@ -66,7 +67,7 @@ def ask_password(main_frame):
         dlg.result = entry.get()
         dlg.destroy()
 
-    dlg.add_buttons("OK", ok)
+    dlg.add_buttons(ok_text, ok)
     return dlg.run(focus=entry.entry) or ""
 
 

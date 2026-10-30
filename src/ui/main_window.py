@@ -170,7 +170,41 @@ class MainWindow:
         self.connect_btn.configure(style="TButton", text=" Reconnect missing")
         set_button_icon(self.connect_btn, "connect", "TButton")
         self.connect_btn.tooltip.text = "Retries hosts that are not connected yet"
+        self._guide_wanted = False
         self.banner.grid_remove()
+
+    def _fit_guide(self, _event=None):
+        """The first-run guide is only a hint: hide it while the grid is too short for one row of tiles."""
+        if not self._guide_wanted:
+            return
+        room = self.grid.canvas.winfo_height() + (self.banner.winfo_height() if self.banner.winfo_ismapped() else 0)
+        enough = room - t.px(70) >= t.px(150)          # one full tile row left after the guide
+        if enough and not self.banner.grid_info():
+            self.banner.grid()
+        elif not enough and self.banner.grid_info():
+            self.banner.grid_remove()
+
+    def reset_connection(self):
+        """Back to the not-connected state, used when a new host list is loaded."""
+        self.connect_btn.configure(style="Primary.TButton", text=" Connect")
+        set_button_icon(self.connect_btn, "connect", "Primary.TButton")
+        self.connect_btn.tooltip.text = "Connect to every host in the list over SSH"
+        self._guide_wanted = bool(self.grid.tiles)
+        if self.grid.tiles:
+            self.banner.grid()
+            self.root.after_idle(self._fit_guide)
+        else:
+            self.banner.grid_remove()
+        self.status_var.set("")
+        self.grid.set_status_filter("")
+        self.show_btn.configure(text="Show: All hosts")
+
+    def set_source(self, source_name, host_count):
+        self.host_count = host_count
+        full = f"{host_count} hosts loaded" + (f" from {source_name}" if source_name else "")
+        short = full if len(full) <= 48 else full[:47] + "…"
+        self.detail_label.configure(text=short)
+        self.detail_tip.text = full if short != full else ""
 
     # ------------------------------------------------------------- header --
     def _build_header(self, source_name, host_count):
@@ -178,11 +212,18 @@ class MainWindow:
                    padding=(t.M, t.S, t.M, t.S))
         header.grid(row=0, column=0, sticky="ew")
         ttk.Label(header, text="Lab Master", style="Title.TLabel").pack(side="left")
-        detail = f"{host_count} hosts loaded" + (f" from {source_name}" if source_name else "")
-        ttk.Label(header, text=detail, style="AppMuted.TLabel").pack(side="left", padx=(t.M, 0), pady=(t.XS, 0))
-
         tools = ttk.Frame(header, style="App.TFrame")
         tools.pack(side="right")
+        self.detail_label = ttk.Label(header, style="AppMuted.TLabel")
+        self.detail_label.pack(side="left", fill="x", expand=True, padx=(t.M, t.M), pady=(t.XS, 0))
+        self.detail_tip = Tooltip(self.detail_label, "")
+        self.set_source(source_name, host_count)
+        if self.actions.get("new_scan"):
+            # only when the dashboard was opened from the scan flow (stable.py)
+            self.new_scan_btn = button(tools, "← New scan", self._wrap(self.actions["new_scan"]),
+                                       "Go back to scanning to find or re-test machines",
+                                       style="Tight.TButton")
+            self.new_scan_btn.pack(side="left", padx=(t.XS, t.M))
         self.sidebar_btn = button(tools, "Hide panel", self.toggle_sidebar,
                                   "Hide the side panel to give the host grid more room", "Ctrl+B",
                                   style="Tight.TButton")
@@ -379,17 +420,15 @@ class MainWindow:
         self.filter_entry.bind("<Escape>", lambda e: (self.filter_var.set(""), "break")[1])
 
         g = group()
-        ttk.Label(g, text="Show").pack(side="left")
-        self.show_btn = ttk.Menubutton(g, text="All hosts", width=0)
-        self.show_btn.pack(side="left", padx=(t.S, 0))
+        self.show_btn = ttk.Menubutton(g, text="Show: All hosts", width=0)
+        self.show_btn.pack(side="left")
         Tooltip(self.show_btn, "Show only hosts with one status. Same as the chips below.")
         self._build_show_menu()
         t.on_change(self._build_show_menu)
 
         g = group()
-        ttk.Label(g, text="Sort").pack(side="left")
-        self.sort_btn = ttk.Menubutton(g, text=SORTS[self.sort_var.get()][0], width=0)
-        self.sort_btn.pack(side="left", padx=(t.S, 0))
+        self.sort_btn = ttk.Menubutton(g, text="Sort: " + SORTS[self.sort_var.get()][0], width=0)
+        self.sort_btn.pack(side="left")
         Tooltip(self.sort_btn, "Order of the host tiles. Status puts failed and offline hosts first.")
         self._build_sort_menu()
         t.on_change(self._build_sort_menu)
@@ -415,22 +454,22 @@ class MainWindow:
         # -- first-run guide (hidden after the first successful connect)
         self.banner = ttk.Frame(box, style="Banner.TFrame", padding=(t.M, t.S))
         self.banner.grid(row=2, column=0, sticky="ew", pady=(0, t.S))
-        steps = FlowFrame(self.banner, gap=t.M, style="Banner.TFrame")
-        steps.pack(fill="x")
-        for num, text in [("1", "Enter username and password"), ("2", "Press Connect"),
-                          ("3", "Type a command and press Run on all")]:
-            step = ttk.Frame(steps, style="Banner.TFrame")
-            ttk.Label(step, text=num, style="BannerStep.TLabel").pack(side="left", padx=(0, t.S))
-            ttk.Label(step, text=text, style="Banner.TLabel").pack(side="left")
-            steps.add(step)
-        ttk.Label(self.banner, text="Tip: right-click a host for more options · F1 lists all shortcuts",
-                  style="BannerMuted.TLabel").pack(anchor="w", pady=(t.XS, 0))
+        ttk.Label(self.banner, text="Start here", style="BannerStep.TLabel").pack(side="left", anchor="n",
+                                                                               padx=(0, t.M))
+        guide = ttk.Label(self.banner, style="Banner.TLabel", justify="left",
+                          text="1  Enter username and password   →   2  Press Connect   →   "
+                               "3  Type a command and press Run on all")
+        guide.pack(side="left", fill="x", expand=True, anchor="w")
+        self.banner.bind("<Configure>", lambda e: guide.configure(wraplength=max(e.width - t.px(120), 200)))
+        Tooltip(guide, "Right-click a host for more options · F1 lists all shortcuts")
         if not self.host_count:
             self.banner.grid_remove()
 
         # -- grid
         self.grid = HostGrid(box)
         self.grid.grid(row=3, column=0, sticky="nsew")
+        self._guide_wanted = bool(self.host_count)
+        self.grid.canvas.bind("<Configure>", self._fit_guide, add="+")
         self.grid.sort_key = self.sort_var.get()
         if self.compact.get():
             self.root.after_idle(self._apply_compact)
@@ -466,12 +505,12 @@ class MainWindow:
         """Shared by the Show dropdown and the chips: both use status_var."""
         key = self.status_var.get()
         self.grid.set_status_filter(key)
-        self.show_btn.configure(text="All hosts" if not key else f"{t.STATUS[key][0]}  {t.STATUS[key][1]}")
+        self.show_btn.configure(text="Show: All hosts" if not key else f"Show: {t.STATUS[key][0]} {t.STATUS[key][1]}")
         self.refresh_counts()
 
     def _apply_sort(self):
         key = self.sort_var.get()
-        self.sort_btn.configure(text=SORTS[key][0])
+        self.sort_btn.configure(text="Sort: " + SORTS[key][0])
         self.grid.set_sort(key)
         settings.set("sort", key)
 
